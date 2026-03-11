@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: syphon-arm64
-          path: build/arm64/**/Release/Syphon.framework
+          path: build/arm64/Build/Products/Release/Syphon.framework
 
   build-x64:
     name: Build Release x64
@@ -96,7 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: syphon-x64
-          path: build/x64/**/Release/Syphon.framework
+          path: build/x64/Build/Products/Release/Syphon.framework
 
   merge:
     name: Create universal framework
@@ -115,13 +115,22 @@ jobs:
           name: syphon-x64
           path: x64
 
+      - name: List downloaded artifacts
+        run: |
+          echo "=== arm64 ==="
+          find arm64 -type f | head -20
+          echo "=== x64 ==="
+          find x64 -type f | head -20
+
       - name: Find frameworks
         id: find
         run: |
-          ARM64_FW=$(find arm64 -name "Syphon.framework" -path "*/Release/*" | head -1)
-          X64_FW=$(find x64 -name "Syphon.framework" -path "*/Release/*" | head -1)
+          ARM64_FW=$(find arm64 -name "Syphon.framework" | head -1)
+          X64_FW=$(find x64 -name "Syphon.framework" | head -1)
           echo "arm64=$ARM64_FW" >> $GITHUB_OUTPUT
           echo "x64=$X64_FW" >> $GITHUB_OUTPUT
+          echo "Found arm64: $ARM64_FW"
+          echo "Found x64: $X64_FW"
 
       - name: Merge with lipo
         run: |
