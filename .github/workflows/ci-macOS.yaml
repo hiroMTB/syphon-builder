@@ -16,8 +16,8 @@ on:
       - main
 
 jobs:
-  build-arm64:
-    name: Build Release arm64
+  build:
+    name: Build Release Universal
     runs-on: macos-14
     steps:
       - name: Checkout repository
@@ -39,107 +39,25 @@ jobs:
             echo "No patches to apply."
           fi
 
-      - name: Build arm64
+      - name: Build universal framework
         run: |
           cd Syphon-Framework
           xcodebuild -project Syphon.xcodeproj \
             -scheme Syphon \
             -configuration Release \
-            -arch arm64 \
-            -derivedDataPath ../build/arm64 \
+            -derivedDataPath ../build \
             ONLY_ACTIVE_ARCH=NO \
+            ARCHS="arm64 x86_64" \
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             clean build
-
-      - name: Archive framework (preserve symlinks)
-        run: tar -cf syphon-arm64.tar -C build/arm64/Build/Products/Release Syphon.framework
-
-      - name: Upload arm64 framework
-        uses: actions/upload-artifact@v4
-        with:
-          name: syphon-arm64
-          path: syphon-arm64.tar
-
-  build-x64:
-    name: Build Release x64
-    runs-on: macos-14
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Clone Syphon Framework
-        run: |
-          git clone "$SYPHON_REPO" Syphon-Framework
-          cd Syphon-Framework
-          git checkout "$SYPHON_REVISION"
-
-      - name: Apply patches
-        run: |
-          PATCHES=(patches/*.patch)
-          if [ -f "${PATCHES[0]}" ]; then
-            cd Syphon-Framework
-            git am ../patches/*.patch
-          else
-            echo "No patches to apply."
-          fi
-
-      - name: Build x64
-        run: |
-          cd Syphon-Framework
-          xcodebuild -project Syphon.xcodeproj \
-            -scheme Syphon \
-            -configuration Release \
-            -arch x86_64 \
-            -derivedDataPath ../build/x64 \
-            ONLY_ACTIVE_ARCH=NO \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            clean build
-
-      - name: Archive framework (preserve symlinks)
-        run: tar -cf syphon-x64.tar -C build/x64/Build/Products/Release Syphon.framework
-
-      - name: Upload x64 framework
-        uses: actions/upload-artifact@v4
-        with:
-          name: syphon-x64
-          path: syphon-x64.tar
-
-  merge:
-    name: Create universal framework
-    runs-on: macos-14
-    needs: [build-arm64, build-x64]
-    steps:
-      - name: Download arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: syphon-arm64
-
-      - name: Download x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: syphon-x64
-
-      - name: Extract frameworks
-        run: |
-          mkdir arm64 x64
-          tar -xf syphon-arm64.tar -C arm64
-          tar -xf syphon-x64.tar -C x64
-
-      - name: Merge with lipo
-        run: |
-          cp -R arm64/Syphon.framework Syphon.framework
-          lipo -create \
-            arm64/Syphon.framework/Versions/A/Syphon \
-            x64/Syphon.framework/Versions/A/Syphon \
-            -output Syphon.framework/Versions/A/Syphon
 
       - name: Verify universal binary
         run: |
-          lipo -info Syphon.framework/Versions/A/Syphon
-          file Syphon.framework/Versions/A/Syphon
+          lipo -info build/Build/Products/Release/Syphon.framework/Versions/A/Syphon
+          file build/Build/Products/Release/Syphon.framework/Versions/A/Syphon
 
-      - name: Archive universal framework
-        run: tar -cf syphon-universal.tar Syphon.framework
+      - name: Archive framework (preserve symlinks)
+        run: tar -cf syphon-universal.tar -C build/Build/Products/Release Syphon.framework
 
       - name: Upload universal framework
         uses: actions/upload-artifact@v4
@@ -149,7 +67,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [merge]
+    needs: [build]
     runs-on: macos-14
     steps:
       - name: Download universal framework

@@ -35,52 +35,23 @@ else
   echo "No patches to apply."
 fi
 
+# Build universal (arm64 + x86_64) in one pass
+echo "Building Release universal..."
 cd "$SYPHON_DIR"
-
-# Build arm64
-echo "Building Release arm64..."
 xcodebuild -project Syphon.xcodeproj \
   -scheme Syphon \
   -configuration Release \
-  -arch arm64 \
-  -derivedDataPath ../build/arm64 \
+  -derivedDataPath ../build \
   ONLY_ACTIVE_ARCH=NO \
+  ARCHS="arm64 x86_64" \
   BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
   clean build
-
-# Build x64
-echo "Building Release x64..."
-xcodebuild -project Syphon.xcodeproj \
-  -scheme Syphon \
-  -configuration Release \
-  -arch x86_64 \
-  -derivedDataPath ../build/x64 \
-  ONLY_ACTIVE_ARCH=NO \
-  BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-  clean build
-
 cd ..
 
-# Find the built frameworks
-ARM64_FW=$(find build/arm64 -name "Syphon.framework" -path "*/Release/*" | head -1)
-X64_FW=$(find build/x64 -name "Syphon.framework" -path "*/Release/*" | head -1)
-
-echo "arm64 framework: $ARM64_FW"
-echo "x64 framework: $X64_FW"
-
-# Create universal framework
-echo "Creating universal framework..."
-mkdir -p build/Release
-cp -R "$ARM64_FW" build/Release/Syphon.framework
-
-lipo -create \
-  "$ARM64_FW/Versions/A/Syphon" \
-  "$X64_FW/Versions/A/Syphon" \
-  -output build/Release/Syphon.framework/Versions/A/Syphon
-
+echo ""
 echo "Verifying universal binary..."
-lipo -info build/Release/Syphon.framework/Versions/A/Syphon
+lipo -info build/Build/Products/Release/Syphon.framework/Versions/A/Syphon
 
 echo ""
 echo "=== Success ==="
-echo "Universal framework: build/Release/Syphon.framework"
+echo "Universal framework: build/Build/Products/Release/Syphon.framework"
