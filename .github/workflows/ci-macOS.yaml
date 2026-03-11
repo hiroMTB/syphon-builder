@@ -1,0 +1,170 @@
+name: Build Syphon macOS Universal
+
+permissions:
+  contents: write
+
+env:
+  SYPHON_REVISION: "71351d4b484cd2d1917867f7846a5cdca724552d"
+  SYPHON_REPO: "https://github.com/Syphon/Syphon-Framework.git"
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-arm64:
+    name: Build Release arm64
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone Syphon Framework
+        run: |
+          git clone "$SYPHON_REPO" Syphon-Framework
+          cd Syphon-Framework
+          git checkout "$SYPHON_REVISION"
+
+      - name: Apply patches
+        run: |
+          PATCHES=(patches/*.patch)
+          if [ -f "${PATCHES[0]}" ]; then
+            cd Syphon-Framework
+            git am ../patches/*.patch
+          else
+            echo "No patches to apply."
+          fi
+
+      - name: Build arm64
+        run: |
+          cd Syphon-Framework
+          xcodebuild -project Syphon.xcodeproj \
+            -scheme Syphon \
+            -configuration Release \
+            -arch arm64 \
+            -derivedDataPath ../build/arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            clean build
+
+      - name: Upload arm64 framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: syphon-arm64
+          path: build/arm64/**/Release/Syphon.framework
+
+  build-x64:
+    name: Build Release x64
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone Syphon Framework
+        run: |
+          git clone "$SYPHON_REPO" Syphon-Framework
+          cd Syphon-Framework
+          git checkout "$SYPHON_REVISION"
+
+      - name: Apply patches
+        run: |
+          PATCHES=(patches/*.patch)
+          if [ -f "${PATCHES[0]}" ]; then
+            cd Syphon-Framework
+            git am ../patches/*.patch
+          else
+            echo "No patches to apply."
+          fi
+
+      - name: Build x64
+        run: |
+          cd Syphon-Framework
+          xcodebuild -project Syphon.xcodeproj \
+            -scheme Syphon \
+            -configuration Release \
+            -arch x86_64 \
+            -derivedDataPath ../build/x64 \
+            ONLY_ACTIVE_ARCH=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            clean build
+
+      - name: Upload x64 framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: syphon-x64
+          path: build/x64/**/Release/Syphon.framework
+
+  merge:
+    name: Create universal framework
+    runs-on: macos-14
+    needs: [build-arm64, build-x64]
+    steps:
+      - name: Download arm64 framework
+        uses: actions/download-artifact@v4
+        with:
+          name: syphon-arm64
+          path: arm64
+
+      - name: Download x64 framework
+        uses: actions/download-artifact@v4
+        with:
+          name: syphon-x64
+          path: x64
+
+      - name: Find frameworks
+        id: find
+        run: |
+          ARM64_FW=$(find arm64 -name "Syphon.framework" -path "*/Release/*" | head -1)
+          X64_FW=$(find x64 -name "Syphon.framework" -path "*/Release/*" | head -1)
+          echo "arm64=$ARM64_FW" >> $GITHUB_OUTPUT
+          echo "x64=$X64_FW" >> $GITHUB_OUTPUT
+
+      - name: Merge with lipo
+        run: |
+          cp -R "${{ steps.find.outputs.arm64 }}" Syphon.framework
+          lipo -create \
+            "${{ steps.find.outputs.arm64 }}/Versions/A/Syphon" \
+            "${{ steps.find.outputs.x64 }}/Versions/A/Syphon" \
+            -output Syphon.framework/Versions/A/Syphon
+
+      - name: Verify universal binary
+        run: |
+          lipo -info Syphon.framework/Versions/A/Syphon
+          file Syphon.framework/Versions/A/Syphon
+
+      - name: Upload universal framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: syphon-universal
+          path: Syphon.framework
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [merge]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download universal framework
+        uses: actions/download-artifact@v4
+        with:
+          name: syphon-universal
+          path: Syphon.framework
+
+      - name: Package release
+        run: |
+          TAG=${{ github.ref_name }}
+          mkdir -p "Syphon_${TAG}"
+          cp -R Syphon.framework "Syphon_${TAG}/"
+          zip -r -y "Syphon_${TAG}.zip" "Syphon_${TAG}"
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          name: "Syphon Framework ${{ github.ref_name }}"
+          body: |
+            Built from Syphon Framework commit: [`${{ env.SYPHON_REVISION }}`](https://github.com/Syphon/Syphon-Framework/commit/${{ env.SYPHON_REVISION }})
+          artifacts: |
+            Syphon_${{ github.ref_name }}.zip
