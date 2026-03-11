@@ -51,11 +51,14 @@ jobs:
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             clean build
 
+      - name: Archive framework (preserve symlinks)
+        run: tar -cf syphon-arm64.tar -C build/arm64/Build/Products/Release Syphon.framework
+
       - name: Upload arm64 framework
         uses: actions/upload-artifact@v4
         with:
           name: syphon-arm64
-          path: build/arm64/Build/Products/Release/Syphon.framework
+          path: syphon-arm64.tar
 
   build-x64:
     name: Build Release x64
@@ -92,52 +95,42 @@ jobs:
             BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
             clean build
 
+      - name: Archive framework (preserve symlinks)
+        run: tar -cf syphon-x64.tar -C build/x64/Build/Products/Release Syphon.framework
+
       - name: Upload x64 framework
         uses: actions/upload-artifact@v4
         with:
           name: syphon-x64
-          path: build/x64/Build/Products/Release/Syphon.framework
+          path: syphon-x64.tar
 
   merge:
     name: Create universal framework
     runs-on: macos-14
     needs: [build-arm64, build-x64]
     steps:
-      - name: Download arm64 framework
+      - name: Download arm64 artifact
         uses: actions/download-artifact@v4
         with:
           name: syphon-arm64
-          path: arm64
 
-      - name: Download x64 framework
+      - name: Download x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: syphon-x64
-          path: x64
 
-      - name: List downloaded artifacts
+      - name: Extract frameworks
         run: |
-          echo "=== arm64 ==="
-          find arm64 -type f | head -20
-          echo "=== x64 ==="
-          find x64 -type f | head -20
-
-      - name: Find frameworks
-        id: find
-        run: |
-          ARM64_FW=$(find arm64 -name "Syphon.framework" | head -1)
-          X64_FW=$(find x64 -name "Syphon.framework" | head -1)
-          echo "arm64=$ARM64_FW" >> $GITHUB_OUTPUT
-          echo "x64=$X64_FW" >> $GITHUB_OUTPUT
-          echo "Found arm64: $ARM64_FW"
-          echo "Found x64: $X64_FW"
+          mkdir arm64 x64
+          tar -xf syphon-arm64.tar -C arm64
+          tar -xf syphon-x64.tar -C x64
 
       - name: Merge with lipo
         run: |
-          cp -R "${{ steps.find.outputs.arm64 }}" Syphon.framework
+          cp -R arm64/Syphon.framework Syphon.framework
           lipo -create \
-            "${{ steps.find.outputs.arm64 }}/Versions/A/Syphon" \
-            "${{ steps.find.outputs.x64 }}/Versions/A/Syphon" \
+            arm64/Syphon.framework/Versions/A/Syphon \
+            x64/Syphon.framework/Versions/A/Syphon \
             -output Syphon.framework/Versions/A/Syphon
 
       - name: Verify universal binary
@@ -145,22 +138,27 @@ jobs:
           lipo -info Syphon.framework/Versions/A/Syphon
           file Syphon.framework/Versions/A/Syphon
 
+      - name: Archive universal framework
+        run: tar -cf syphon-universal.tar Syphon.framework
+
       - name: Upload universal framework
         uses: actions/upload-artifact@v4
         with:
           name: syphon-universal
-          path: Syphon.framework
+          path: syphon-universal.tar
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [merge]
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - name: Download universal framework
         uses: actions/download-artifact@v4
         with:
           name: syphon-universal
-          path: Syphon.framework
+
+      - name: Extract framework
+        run: tar -xf syphon-universal.tar
 
       - name: Package release
         run: |
